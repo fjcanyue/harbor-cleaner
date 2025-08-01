@@ -27,8 +27,8 @@
 
 1.  **克隆仓库**
     ```bash
-    git clone [https://github.com/your-username/harbor-cleaner-go.git](https://github.com/your-username/harbor-cleaner-go.git)
-    cd harbor-cleaner-go
+    git clone https://github.com/fjcanyue/harbor-cleaner
+    cd harbor-cleaner
     ```
 
 2.  **编译脚本**
@@ -62,7 +62,7 @@
 
 ```bash
 ./harbor-cleaner \
-  -harbor.url="[https://harbor.mycompany.com](https://harbor.mycompany.com)" \
+  -harbor.url="https://harbor.mycompany.com" \
   -harbor.user="robot$mycleaner" \
   -harbor.password="your-robot-token-here" \
   -project.whitelist="dev-team,staging-apps" \
@@ -80,7 +80,7 @@
 
 ```bash
 ./harbor-cleaner \
-  -harbor.url="[https://harbor.mycompany.com](https://harbor.mycompany.com)" \
+  -harbor.url="https://harbor.mycompany.com" \
   -harbor.user="robot$mycleaner" \
   -harbor.password="your-robot-token-here" \
   -project.whitelist="dev-team,staging-apps" \
