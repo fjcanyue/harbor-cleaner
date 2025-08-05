@@ -1,0 +1,33 @@
+strategy: "harbor"
+
+k8s:
+  environments:
+    - name: "production"
+      kubeconfig: "/path/to/your/prod.kubeconfig"
+      namespaces:
+        - "prod-ns-1"
+        - "prod-ns-2"
+      keep: 5
+
+    - name: "development"
+      kubeconfig: "/path/to/your/dev.kubeconfig"
+      namespaces:
+        - "dev-ns"
+      keep: 2
+  stage: ""
+  manifest-file: "safe-images-manifest.csv"
+  audit-file: ""
+
+harbor:
+  url: ""
+  user: ""
+  password: ""
+  keep-last: 50
+  max-snapshots: 5
+  page-size: 100
+  project-whitelist: ""
+
+dry-run: true
+
+log.level: "info"
+log.file: ""

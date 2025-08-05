@@ -38,28 +38,25 @@ jobs:
           for PLATFORM in "${PLATFORMS[@]}"; do
             OS="${PLATFORM%/*}"
             ARCH="${PLATFORM#*/}"
-            OUTPUT="dist/harbor-cleaner-${{ github.event.inputs.version }}-${OS}-${ARCH}"
+            OUTPUT_NAME="harbor-cleaner-${{ github.event.inputs.version }}-${OS}-${ARCH}"
             if [ "$OS" = "windows" ]; then
-              OUTPUT="${OUTPUT}.exe"
+              OUTPUT_NAME="${OUTPUT_NAME}.exe"
             fi
             echo "构建 $OS/$ARCH..."
-            GOOS=$OS GOARCH=$ARCH go build -o "$OUTPUT" -v
+            GOOS=$OS GOARCH=$ARCH go build -o "dist/$OUTPUT_NAME" -v ./cmd/harbor-cleaner
           done
 
       - name: 创建ZIP包
         run: |
           cd dist
           for FILE in harbor-cleaner-*; do
-            DIR="${FILE%.*}"
-            mkdir -p "$DIR"
             if [[ "$FILE" == *.exe ]]; then
-              mv "$FILE" "$DIR/"
+              zip "${FILE%.exe}.zip" "$FILE"
             else
-              mv "$FILE" "$DIR/harbor-cleaner"
+              zip "$FILE.zip" "$FILE"
             fi
-            zip -r "${DIR}.zip" "$DIR"
-            rm -rf "$DIR"
           done
+          rm -f harbor-cleaner-*
 
       - name: 创建Release
         uses: softprops/action-gh-release@v1

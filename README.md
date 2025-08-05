@@ -1,98 +1,197 @@
 # Harbor Cleaner
 
-![Go Version](https://img.shields.io/badge/Go-1.18%2B-blue.svg)
+[中文](./README_zh.md)
+
+
+![Go Version](https://img.shields.io/badge/Go-1.20%2B-blue.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 
-一个灵活、可配置且注重安全的 Go 脚本，用于清理 Harbor 镜像仓库中的过期镜像。该脚本可以通过命令行标志进行精细控制，并提供详细的日志和执行摘要，非常适合集成到 CI/CD 或定时任务 (CronJob) 中。
+An advanced, multi-strategy Go script for intelligently cleaning up old images in a Harbor registry. This tool has evolved to support both simple time-based retention and a powerful, production-safe, Kubernetes-aware workflow.
 
-## ✨ 功能亮点
+It is designed for safe execution in automated environments, providing detailed logging, auditable reports, and a decoupled, two-stage process for maximum control and safety.
 
-- **智能保留策略**: 保留每个仓库最新的 N 个版本，并可限制其中 `SNAPSHOT` 版本的最大数量。
-- **安全第一**: 默认启用 **Dry Run (演练)** 模式，在不执行任何删除操作的情况下预览将要执行的清理任务。
-- **项目白名单**: 可指定一个或多个项目进行扫描，避免对生产或关键项目造成意外影响。
-- **全面的日志记录**: 所有操作都会实时输出到控制台，并同时保存到带时间戳的日志文件 (`harbor-cleaner-YYYYMMDD-HHMMSS.log`) 中，便于审计和排错。
-- **清晰的汇总报告**: 脚本执行结束后，会提供一份详细的摘要，包括扫描的项目/仓库数量和已删除的镜像总数。
-- **高度可配置**: 所有参数均通过命令行标志传递，易于在不同环境中使用。
+## ✨ Features
 
-## ⚙️ 先决条件
+-   **Multi-Strategy Cleaning**:
+    -   **`harbor`**: Simple strategy to keep the latest N images based on push time.
+    -   **`kubernetes`**: Advanced strategy that only cleans images known to be managed by your Kubernetes workloads.
+-   **Kubernetes-Aware Retention**: Discovers images and their history directly from multiple Kubernetes clusters, Deployments, and StatefulSets.
+-   **Safe, Two-Stage Workflow**: The Kubernetes strategy is split into:
+    1.  **`scan`**: Scans K8s clusters and generates a "safe image" manifest file for review. No deletion occurs.
+    2.  **`clean`**: Reads the manifest file and cleans Harbor accordingly. This stage does not require K8s access.
+-   **Comprehensive Auditing**: The `clean` stage generates a detailed CSV audit report showing the status (`KEPT`, `DELETED`, `TO BE DELETED`) of every processed image and its K8s usage context.
+-   **Safety First**:
+    -   The `kubernetes` strategy will **not** touch any Harbor repository that isn't being used by a scanned K8s workload.
+    -   `dry-run` mode is enabled by default to prevent accidental deletion.
+-   **Highly Configurable**: All operations are controlled via a central `config.yaml` file and command-line flags.
 
-1.  **Go 环境**: 需要安装 Go 1.18 或更高版本。
-2.  **Harbor 访问权限**: 需要能够访问您的 Harbor 实例的 API。
-3.  **Harbor 机器人账户 (强烈推荐)**: 为了安全，建议在 Harbor 中创建一个专用的[机器人账户](https://goharbor.io/docs/2.10.0/user-guide/robot-accounts/)，并授予其执行清理任务所需的最小权限：
-    -   **Project**: `list` (仓库列表)
-    -   **Repository**: `read` (仓库读取)
-    -   **Artifact**: `read`, `delete` (镜像读取与删除)
+## ⚖️ Strategies Explained
 
-## 🚀 安装与编译
+You can choose a strategy using the `-strategy` flag.
 
-1.  **克隆仓库**
+### 1. `harbor` Strategy (Simple)
+This is the original, basic strategy. It connects only to Harbor and, for each repository, deletes all but the most recently pushed images according to the `-keep.last` and `-keep.snapshots` rules.
+
+**Use when**: You want a simple, time-based cleanup and don't need to correlate with a system like Kubernetes.
+
+### 2. `kubernetes` Strategy (Recommended for Production)
+This is the advanced, recommended strategy for production environments. It treats your Kubernetes clusters as the "source of truth" for which images are important. It operates in two distinct stages for maximum safety and auditability.
+
+**Use when**: You want to ensure that no image currently or recently in use by your applications is ever deleted.
+
+## ⚙️ Prerequisites
+
+1.  **Go Environment**: Go 1.20 or higher.
+2.  **Harbor Access**: Credentials for a Harbor account (a [Robot Account](https://goharbor.io/docs/2.10.0/user-guide/robot-accounts/) is highly recommended) with permissions to list projects/repositories and read/delete artifacts.
+3.  **Kubernetes Access (for `scan` stage)**: Valid `kubeconfig` files for all Kubernetes clusters you intend to scan.
+
+## 🚀 Installation
+
+1.  **Clone the repository**:
     ```bash
-    git clone https://github.com/fjcanyue/harbor-cleaner
-    cd harbor-cleaner
+    git clone [https://github.com/your-username/harbor-cleaner-go.git](https://github.com/your-username/harbor-cleaner-go.git)
+    cd harbor-cleaner-go
+    ```
+2.  **Install dependencies**:
+    ```bash
+    go mod tidy
+    ```
+3.  **Build the executable**:
+    ```bash
+    go build ./cmd/harbor-cleaner
     ```
 
-2.  **编译脚本**
-    ```bash
-    go build -o harbor-cleaner main.go
-    ```
-    这将在当前目录下生成一个名为 `harbor-cleaner` 的可执行文件。
+## 📋 Configuration File (`config.yaml`)
 
-## 📖 使用方法
+All script behavior is controlled by a central `config.yaml` file. You can use the `-c` or `--config` flag to specify its path.
 
-### 命令行参数
+**Example `config.yaml`**: 
+```yaml
+# Default strategy: "harbor" or "k8s"
+strategy: "k8s"
 
-| 参数                 | 默认值                                 | 描述                                                                          |
-| -------------------- | -------------------------------------- | ----------------------------------------------------------------------------- |
-| `-harbor.url`        | `""`                                   | **(必需)** Harbor API 的 URL (例如: `https://harbor.example.com`)               |
-| `-harbor.user`       | `""`                                   | **(必需)** Harbor 用户名或机器人账户名称 (例如: `robot$mycleaner`)            |
-| `-harbor.password`   | `""`                                   | **(必需)** Harbor 密码或机器人账户的 Token                                    |
-| `-keep.last`         | `10`                                   | 每个仓库中需要保留的最新镜像数量。                                            |
-| `-keep.snapshots`    | `2`                                    | 在保留的最新镜像中，最多允许存在的 `SNAPSHOT` 镜像数量。                      |
-| `-dry-run`           | `true`                                 | 若为 `true`，则只打印将要执行的操作，不实际删除。**要执行删除，请设置为 `false`**。 |
-| `-project.whitelist` | `""`                                   | 仅扫描指定的项目，项目名之间用逗号分隔。如果为空，则扫描所有项目。            |
-| `-page-size`         | `100`                                  | 每次 API 请求获取的项目数量（用于分页）。                                     |
+# Log level: "debug", "info", "warn", "error"
+log.level: "info"
 
-### 示例工作流
+# --- Harbor Configuration ---
+harbor:
+  url: "https://my.harbor.com"
+  user: "robot$mycleaner"
+  password: "your-robot-token"
+  # Number of items to fetch per Harbor API request
+  page-size: 100
+  # Number of latest artifacts to keep per repository (harbor strategy)
+  keep-last: 50
+  # Max number of SNAPSHOT artifacts to keep among the latest (harbor strategy)
+  max-snapshots: 5
+  # Comma-separated list of project names to scan. If empty, all projects are scanned.
+  project-whitelist: ""
 
-我们强烈建议您遵循以下步骤来安全地使用此脚本。
+# --- Kubernetes Strategy Configuration ---
+k8s:
+  # Stage for the kubernetes strategy: "scan" or "clean"
+  stage: "scan"
+  # Intermediate manifest file for "scan" and "clean" stages
+  manifest-file: "safe-images-manifest.csv"
+  # Final audit report CSV file for "clean" stage
+  audit-file: ""
 
-#### 第 1 步: 使用 Dry Run (演练) 模式进行预览
+  # --- Kubernetes Environments ---
+  environments:
+    - name: "production"
+      # Path to the kubeconfig file
+      kubeconfig: "/path/to/your/prod.kubeconfig"
+      # Namespaces to scan
+      namespaces:
+        - "prod-ns-1"
+        - "prod-ns-2"
+      # For each workload, keep the N most recent unique images from its history
+      keep: 5
 
-首次运行时，始终使用 `dry-run` 模式并配合 `-project.whitelist` 来限制范围，以验证清理策略是否符合预期。
+    - name: "development"
+      kubeconfig: "/path/to/your/dev.kubeconfig"
+      namespaces:
+        - "dev-ns"
+      keep: 2
 
-```bash
-./harbor-cleaner \
-  -harbor.url="https://harbor.mycompany.com" \
-  -harbor.user="robot$mycleaner" \
-  -harbor.password="your-robot-token-here" \
-  -project.whitelist="dev-team,staging-apps" \
-  -keep.last=15 \
-  -keep.snapshots=3
+# --- General Settings ---
+# If true, only print actions. For 'clean' stage, set to false to actually delete.
+dry-run: true
 ```
 
-#### 第 2 步: 检查日志文件
+## 📖 Usage & Workflow (Kubernetes Strategy)
 
-脚本运行后，会生成一个日志文件，例如 `harbor-cleaner-20250801-015101.log`。仔细检查此文件，确认所有 `[DRY RUN] Would delete artifact...` 的条目都是您希望删除的镜像。
+This recommended workflow ensures safety and provides a clear audit trail.
 
-#### 第 3 步: 执行实际删除
+### Stage 1: Scan Kubernetes and Generate Manifest
 
-确认 `dry-run` 的结果无误后，移除 `dry-run` 标志（或将其设置为 `false`）来执行真正的删除操作。
+Run the script in `scan` mode. This stage connects to your K8s clusters and produces a CSV manifest of all images it considers "safe". **No Harbor credentials are needed here.**
+
+Ensure your `config.yaml` has the correct `k8s.stage: "scan"` and defines your Kubernetes environments.
 
 ```bash
-./harbor-cleaner \
-  -harbor.url="https://harbor.mycompany.com" \
-  -harbor.user="robot$mycleaner" \
-  -harbor.password="your-robot-token-here" \
-  -project.whitelist="dev-team,staging-apps" \
-  -keep.last=15 \
-  -keep.snapshots=3 \
-  -dry-run=false
+./harbor-cleaner -c config.yaml
+```
+-   A new file, `safe-images-manifest.csv`, will be created.
+
+### Stage 2: Review the Manifest (Manual Step)
+Open `safe-images-manifest.csv`. This is your chance to review exactly which images the script has identified as safe and where it found them. This file can be version-controlled and reviewed by your team.
+
+**Example `safe-images-manifest.csv`**:
+```csv
+image,environment,namespace
+[my.harbor.com/prod/app1:v1.2.3,production,prod-ns-1](https://my.harbor.com/prod/app1:v1.2.3,production,prod-ns-1)
+[my.harbor.com/prod/app1:v1.2.2,production,prod-ns-1](https://my.harbor.com/prod/app1:v1.2.2,production,prod-ns-1)
+[my.harbor.com/dev/app2:latest,development,dev-ns](https://my.harbor.com/dev/app2:latest,development,dev-ns)
 ```
 
-#### 第 4 步: 在 Harbor 中运行垃圾回收 (GC)
+### Stage 3: Clean Harbor Using the Manifest
 
-> ⚠️ **重要提示**: 此脚本删除的是镜像的标签（Tag/Artifact）。这并不会立即释放磁盘空间。您**必须**在 Harbor UI 中（`管理` -> `清理` -> `垃圾回收`）或通过 API 手动触发 **Garbage Collection (GC)** 来清理未被引用的镜像层 (blobs)，从而真正回收存储空间。
+Once you approve the manifest, run the script in `clean` mode. This stage reads the manifest file and cleans Harbor. **No K8s access is needed here.**
 
-## 📝 许可证
+Update your `config.yaml` to set `k8s.stage: "clean"` and fill in your Harbor credentials.
 
-本项目根据 [MIT 许可证](https://opensource.org/licenses/MIT) 发布。
+**First, always run with `dry-run` enabled:**
+
+Set `dry-run: true` in your `config.yaml` and run:
+```bash
+./harbor-cleaner -c config.yaml
+```
+-   This will generate a final audit report (e.g., `cleanup-audit-20250805-015800.csv`) showing what *would be* deleted.
+
+**Finally, execute the actual cleanup:**
+
+Set `dry-run: false` in your `config.yaml` and run:
+```bash
+./harbor-cleaner -c config.yaml
+```
+-   This performs the deletion and creates the definitive audit report.
+
+### Stage 4: Run Harbor Garbage Collection (GC)
+> ⚠️ **Important**: This script deletes image tags from the Harbor database. To reclaim disk space, you **must** run Garbage Collection (GC) in the Harbor UI (`Administration` -> `Clean Up` -> `Garbage Collection`).
+
+## 📄 Example Audit Report
+
+The `clean` stage generates a detailed CSV report, giving you a complete record of the operation.
+
+**Example `cleanup-audit-20250805-015900.csv`**:
+```csv
+Image,Status,Used In Environments,Used In Namespaces,Notes
+[my.harbor.com/prod/app1:v1.2.3,KEPT,production,prod-ns-1,In](https://my.harbor.com/prod/app1:v1.2.3,KEPT,production,prod-ns-1,In) use by Kubernetes
+[my.harbor.com/prod/app1:v1.2.2,KEPT,production,prod-ns-1,In](https://my.harbor.com/prod/app1:v1.2.2,KEPT,production,prod-ns-1,In) use by Kubernetes
+[my.harbor.com/prod/app1:v1.2.0,DELETED,-,-,Not](https://my.harbor.com/prod/app1:v1.2.0,DELETED,-,-,Not) found in K8s manifest file
+[my.harbor.com/dev/app2:latest,KEPT,development,dev-ns,In](https://my.harbor.com/dev/app2:latest,KEPT,development,dev-ns,In) use by Kubernetes
+[my.harbor.com/dev/app2:old-feature,DELETED,-,-,Not](https://my.harbor.com/dev/app2:old-feature,DELETED,-,-,Not) found in K8s manifest file
+```
+
+## 🎛️ Configuration & Flags
+
+While most settings are managed in `config.yaml`, you can override the config file path with a command-line flag.
+
+| Flag | Default Value | Description |
+| :--- | :--- | :--- |
+| **`-c`, `--config`** | `config.yaml` | Path to the configuration file. |
+
+## 📝 License
+
+This project is released under the [MIT License](https://opensource.org/licenses/MIT).
