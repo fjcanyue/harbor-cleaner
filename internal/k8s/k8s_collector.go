@@ -71,12 +71,12 @@ func getSafeImagesForWorkload(clientset kubernetes.Interface, envName, namespace
 }
 
 // BuildK8sImageSafeList now returns a slice of SafeImageInfo.
-func BuildK8sImageSafeList(config *config.K8sConfig) ([]SafeImageInfo, error) {
+func BuildK8sImageSafeList(cfg *config.K8sConfig) ([]SafeImageInfo, error) {
 	var globalSafeList []SafeImageInfo
 	// Use a map to prevent adding duplicate SafeImageInfo entries if an image is used in multiple workloads.
 	globalSafeListMap := make(map[string]SafeImageInfo)
 
-	for _, env := range config.Environments {
+	for _, env := range cfg.Environments {
 		log.Printf(" K8s: Connecting to env '%s'...", env.Name)
 		// ... K8s connection logic ...
 		kubeconfigPath, err := filepath.Abs(env.Kubeconfig)
@@ -101,6 +101,11 @@ func BuildK8sImageSafeList(config *config.K8sConfig) ([]SafeImageInfo, error) {
 			}
 
 			for _, d := range deployments.Items {
+				// Check if pod should be processed based on whitelist/blacklist
+				if !config.ShouldProcessWorkload(d.Name, env.PodWhitelist, env.PodBlacklist) {
+					log.Printf("      Skipping deployment %s (filtered by whitelist/blacklist)", d.Name)
+					continue
+				}
 				safeImages := getSafeImagesForWorkload(clientset, env.Name, ns, &d, env.Keep)
 				for _, imgInfo := range safeImages {
 					if _, exists := globalSafeListMap[imgInfo.Image]; !exists {
@@ -115,6 +120,11 @@ func BuildK8sImageSafeList(config *config.K8sConfig) ([]SafeImageInfo, error) {
 				continue
 			}
 			for _, s := range statefulsets.Items {
+				// Check if pod should be processed based on whitelist/blacklist
+				if !config.ShouldProcessWorkload(s.Name, env.PodWhitelist, env.PodBlacklist) {
+					log.Printf("      Skipping statefulset %s (filtered by whitelist/blacklist)", s.Name)
+					continue
+				}
 				for _, c := range s.Spec.Template.Spec.Containers {
 					imgInfo := SafeImageInfo{Image: c.Image, Env: env.Name, Namespace: ns}
 					if _, exists := globalSafeListMap[imgInfo.Image]; !exists {

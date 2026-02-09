@@ -119,6 +119,34 @@ k8s:
 dry-run: true
 ```
 
+### Pod Name Filtering (Optional)
+
+You can filter which Kubernetes workloads (Deployments and StatefulSets) are scanned and cleaned using whitelist and blacklist patterns with wildcard support.
+
+**Configuration options per environment:**
+- `pod-whitelist`: Only scan workloads matching these patterns. If empty, all workloads are considered.
+- `pod-blacklist`: Skip workloads matching these patterns. Applied after whitelist.
+
+**Wildcard support:**
+- `*` - Matches any sequence of characters
+- `?` - Matches any single character
+
+**Example:**
+```yaml
+environments:
+  - name: "production"
+    kubeconfig: "/path/to/prod.kubeconfig"
+    namespaces:
+      - "prod"
+    keep: 5
+    pod-whitelist:
+      - "app-*"        # Only scan pods starting with "app-"
+      - "web-server"   # And the exact pod "web-server"
+    pod-blacklist:
+      - "*test*"       # But skip anything containing "test"
+      - "debug-*"      # And skip anything starting with "debug-"
+```
+
 ## 📖 Usage & Workflow (Kubernetes Strategy)
 
 This recommended workflow ensures safety and provides a clear audit trail.
@@ -166,6 +194,22 @@ Set `dry-run: false` in your `config.yaml` and run:
 ./harbor-cleaner -c config.yaml
 ```
 -   This performs the deletion and creates the definitive audit report.
+
+#### Kubernetes Strategy Cleanup Rules
+
+The `clean` stage follows these strict rules to ensure safety:
+
+1. **Repository Scope**: Only repositories **mentioned in the manifest file** are processed. Repositories not in the manifest are completely skipped and never touched.
+
+2. **Image Retention**: 
+   - Images listed in the manifest → **KEPT** (safe, in use by K8s)
+   - Other images in the same repository → **DELETED** (not in manifest)
+
+**Example**: If your manifest contains only `my.harbor.com/dev/app1:v1.0.1`:
+- `dev/app1` repository: v1.0.1 is kept, all other tags are deleted
+- `dev/app2` repository: **Completely skipped**, nothing is deleted
+
+This design ensures that the tool only cleans images from repositories it knows are managed by your Kubernetes workloads, leaving all other repositories untouched.
 
 ### Stage 4: Run Harbor Garbage Collection (GC)
 > ⚠️ **Important**: This script deletes image tags from the Harbor database. To reclaim disk space, you **must** run Garbage Collection (GC) in the Harbor UI (`Administration` -> `Clean Up` -> `Garbage Collection`).

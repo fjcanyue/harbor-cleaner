@@ -8,6 +8,16 @@ k8s:
         - "prod-ns-1"
         - "prod-ns-2"
       keep: 5
+      # Pod whitelist: only scan these pods (supports wildcards: * and ?)
+      # If empty, all pods are considered
+      pod-whitelist:
+        - "app-*"
+        - "web-server"
+      # Pod blacklist: skip these pods (supports wildcards: * and ?)
+      # Applied after whitelist
+      pod-blacklist:
+        - "*test*"
+        - "debug-*"
 
     - name: "development"
       kubeconfig: "/path/to/your/dev.kubeconfig"
